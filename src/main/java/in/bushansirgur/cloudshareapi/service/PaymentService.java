@@ -1,6 +1,5 @@
 package in.bushansirgur.cloudshareapi.service;
 
-import com.fasterxml.jackson.databind.util.JSONPObject;
 import com.razorpay.Order;
 import com.razorpay.RazorpayClient;
 import in.bushansirgur.cloudshareapi.document.PaymentTransaction;
@@ -9,6 +8,7 @@ import in.bushansirgur.cloudshareapi.dto.PaymentDTO;
 import in.bushansirgur.cloudshareapi.dto.PaymentVerificationDTO;
 import in.bushansirgur.cloudshareapi.repository.PaymentTransactionRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -22,6 +22,7 @@ import java.util.Formatter;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PaymentService {
 
     private final ProfileService profileService;
@@ -35,6 +36,7 @@ public class PaymentService {
 
     public PaymentDTO createOrder(PaymentDTO paymentDTO) {
         try {
+            log.info("Starting order creation for paymentDTO: {}", paymentDTO);
             ProfileDocument currentProfile = profileService.getCurrentProfile();
             String clerkId = currentProfile.getClerkId();
             RazorpayClient razorpayClient = new RazorpayClient(razorpayKeyId, razorpayKeySecret);
@@ -46,6 +48,7 @@ public class PaymentService {
 
             Order order = razorpayClient.orders.create(orderRequest);
             String orderId = order.get("id");
+            log.info("Razorpay order created successfully with id: {}", orderId);
 
             //create pending transaction record
             PaymentTransaction transaction = PaymentTransaction.builder()
@@ -61,6 +64,7 @@ public class PaymentService {
                     .build();
 
             paymentTransactionRepository.save(transaction);
+            log.info("Payment transaction saved with orderId: {}", orderId);
 
             return PaymentDTO.builder()
                     .orderId(orderId)
@@ -69,6 +73,7 @@ public class PaymentService {
                     .build();
 
         }catch (Exception e) {
+            log.error("Error creating order: {}", e.getMessage(), e);
             return PaymentDTO.builder()
                     .success(false)
                     .message("Error creating order: "+e.getMessage())
@@ -78,12 +83,14 @@ public class PaymentService {
 
     public PaymentDTO verifyPayment(PaymentVerificationDTO request) {
         try {
+            log.info("Starting payment verification for orderId: {}, paymentId: {}", request.getRazorpay_order_id(), request.getRazorpay_payment_id());
             ProfileDocument currentProfile = profileService.getCurrentProfile();
             String clerkId = currentProfile.getClerkId();
 
             String data = request.getRazorpay_order_id()+ "|" +request.getRazorpay_payment_id();
             String generatedSignature = generateHmacSha256Signature(data, razorpayKeySecret);
             if (!generatedSignature.equals(request.getRazorpay_signature())) {
+                log.warn("Payment signature verification failed for orderId: {}", request.getRazorpay_order_id());
                 updateTransactionStatus(request.getRazorpay_order_id(), "FAILED", request.getRazorpay_payment_id(), null);
                 return PaymentDTO.builder()
                         .success(false)
@@ -104,11 +111,19 @@ public class PaymentService {
                     creditsToAdd = 5000;
                     plan = "ULTIMATE";
                     break;
+                default:
+                    log.warn("Invalid plan selected: {}", request.getPlanId());
+                    updateTransactionStatus(request.getRazorpay_order_id(), "FAILED", request.getRazorpay_payment_id(), null);
+                    return PaymentDTO.builder()
+                            .success(false)
+                            .message("Invalid plan selected")
+                            .build();
             }
 
             if (creditsToAdd > 0) {
                 userCreditsService.addCredits(clerkId, creditsToAdd, plan);
                 updateTransactionStatus(request.getRazorpay_order_id(), "SUCCESS", request.getRazorpay_payment_id(), creditsToAdd);
+                log.info("Payment verified and {} credits added for clerkId: {}", creditsToAdd, clerkId);
                 return PaymentDTO.builder()
                         .success(true)
                         .message("Payment verified and credits added successfully")
@@ -122,9 +137,12 @@ public class PaymentService {
                         .build();
             }
         }catch (Exception e) {
+            log.error("Error verifying payment for orderId: {}, paymentId: {}. Error: {}", request.getRazorpay_order_id(), request.getRazorpay_payment_id(), e.getMessage(), e);
             try {
+
                 updateTransactionStatus(request.getRazorpay_order_id(), "ERROR", request.getRazorpay_payment_id(), null);
             } catch (Exception ex) {
+                log.error("Error updating transaction status to ERROR: {}", ex.getMessage(), ex);
                 throw new RuntimeException(ex);
             }
             return PaymentDTO.builder()
@@ -135,6 +153,7 @@ public class PaymentService {
     }
 
     private void updateTransactionStatus(String razorpayOrderId, String status, String razorpayPaymentId, Integer creditsToAdd) {
+        log.info("Updating transaction status to {} for orderId: {}", status, razorpayOrderId);
         paymentTransactionRepository.findAll().stream()
                 .filter(t -> t.getOrderId() != null && t.getOrderId().equals(razorpayOrderId))
                 .findFirst()
@@ -144,9 +163,14 @@ public class PaymentService {
                     if (creditsToAdd != null) {
                         transaction.setCreditsAdded(creditsToAdd);
                     }
-                    return paymentTransactionRepository.save(transaction);
+                    PaymentTransaction savedTransaction = paymentTransactionRepository.save(transaction);
+                    log.info("Transaction updated: {}", savedTransaction);
+                    return savedTransaction;
                 })
-                .orElse(null);
+                .orElseGet(() -> {
+                    log.warn("No transaction found for orderId: {}", razorpayOrderId);
+                    return null;
+                });
     }
 
     /**

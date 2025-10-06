@@ -37,28 +37,33 @@ public class FileController {
         log.info("Received Req for file  uploading ...");
         Map<String, Object> response = new HashMap<>();
         List<FileMetadataDTO> list = fileMetadataService.uploadFiles(files);
+        log.info("fileMetadata saved in db ");
 
         UserCredits finalCredits = userCreditsService.getUserCredits();
 
         response.put("files", list);
         response.put("remainingCredits", finalCredits.getCredits());
+        log.info("remainingCredits {}", finalCredits.getCredits());
         return ResponseEntity.ok(response);
     }
 
     @GetMapping("/my")
     public ResponseEntity<?> getFilesForCurrentUser() {
+        log.info("Received req for getFilesForCurrentUser....");
         List<FileMetadataDTO> files = fileMetadataService.getFiles();
         return ResponseEntity.ok(files);
     }
 
     @GetMapping("/public/{id}")
     public ResponseEntity<?> getPublicFile(@PathVariable String id) {
+        log.info("Received req for getProfile for id {}", id);
         FileMetadataDTO file = fileMetadataService.getPublicFile(id);
         return ResponseEntity.ok(file);
     }
 
     @GetMapping("/download/{id}")
     public ResponseEntity<Resource> download(@PathVariable String id) throws IOException {
+        log.info("Received req for download file for id {}", id);
         FileMetadataDTO downloadbleFile = fileMetadataService.getDownloadableFile(id);
         Path path = Paths.get(downloadbleFile.getFileLocation());
         Resource resource = new UrlResource(path.toUri());
@@ -71,12 +76,14 @@ public class FileController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteFile(@PathVariable String id) {
+        log.info("Received req for delete file for id {}", id);
         fileMetadataService.deleteFile(id);
         return ResponseEntity.noContent().build();
     }   
 
     @PatchMapping("/{id}/toggle-public")
     public ResponseEntity<?> togglePublic(@PathVariable String id) {
+        log.info("Received req for togglePublic file for id {}", id);
         FileMetadataDTO file = fileMetadataService.togglePublic(id);
         return ResponseEntity.ok(file);
     }

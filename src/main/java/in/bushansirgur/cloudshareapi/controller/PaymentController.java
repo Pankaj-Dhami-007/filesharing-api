@@ -4,6 +4,7 @@ import in.bushansirgur.cloudshareapi.dto.PaymentDTO;
 import in.bushansirgur.cloudshareapi.dto.PaymentVerificationDTO;
 import in.bushansirgur.cloudshareapi.service.PaymentService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -13,12 +14,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/payments")
+@Slf4j
 public class PaymentController {
 
     private final PaymentService paymentService;
 
     @PostMapping("/create-order")
     public ResponseEntity<?> createOrder(@RequestBody PaymentDTO paymentDTO) {
+        log.info("Received create order request: {}", paymentDTO);
         PaymentDTO response = paymentService.createOrder(paymentDTO);
 
         if (response.getSuccess()) {
@@ -30,6 +33,7 @@ public class PaymentController {
 
     @PostMapping("/verify-payment")
     public ResponseEntity<?> verifyPayment(@RequestBody PaymentVerificationDTO request) {
+        log.info("Received payment verification request: {}", request);
        PaymentDTO response = paymentService.verifyPayment(request);
         if (response.getSuccess()) {
             return ResponseEntity.ok(response);
